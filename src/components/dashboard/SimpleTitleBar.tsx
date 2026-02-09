@@ -88,38 +88,49 @@ const SimpleTitleBar = ({
   const displayTitle = moduleTitle || title;
   const displaySubtitle = moduleDescription || subtitle;
 
-  // Renderizar o ícone - prioriza o passado via props, senão usa o do módulo
-  const renderIcon = () => {
+  // Renderizar o ícone grande à esquerda
+  const renderLargeIcon = () => {
     if (icon) {
-      return <span className="shrink-0 text-primary">{icon}</span>;
+      return (
+        <div className="shrink-0 p-2 bg-primary/10 rounded-lg border border-primary/20">
+          <span className="text-primary">{icon}</span>
+        </div>
+      );
     }
     
     // Só mostrar ícone dinâmico em desktop
     if (!isMobile && ModuleIcon) {
       return (
-        <span className="shrink-0 p-1.5 bg-primary/10 rounded-lg">
-          <ModuleIcon className="h-5 w-5 text-primary" />
-        </span>
+        <div className="shrink-0 p-2 bg-primary/10 rounded-lg border border-primary/20">
+          <ModuleIcon className="h-8 w-8 text-primary" />
+        </div>
       );
     }
 
     return null;
   };
 
+  const iconElement = renderLargeIcon();
+
   return (
     <Card>
       <CardHeader className="px-4 md:px-6">
         <div className="flex items-start justify-between gap-3">
-          <div className="flex-1 min-w-0">
-            <CardTitle className="flex items-center gap-2 text-base">
-              {renderIcon()}
-              <span className="truncate">{displayTitle}</span>
-            </CardTitle>
-            {displaySubtitle ? (
-              <p className="text-xs md:text-sm text-muted-foreground mt-1 line-clamp-2 md:line-clamp-none">
-                {displaySubtitle}
-              </p>
-            ) : null}
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            {/* Ícone à esquerda ocupando espaço das duas linhas */}
+            {iconElement}
+            
+            {/* Título e descrição */}
+            <div className="flex-1 min-w-0">
+              <CardTitle className="text-base">
+                <span className="truncate">{displayTitle}</span>
+              </CardTitle>
+              {displaySubtitle ? (
+                <p className="text-xs md:text-sm text-muted-foreground mt-1 line-clamp-2 md:line-clamp-none">
+                  {displaySubtitle}
+                </p>
+              ) : null}
+            </div>
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
