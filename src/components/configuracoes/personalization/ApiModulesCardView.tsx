@@ -156,8 +156,10 @@ const ApiModulesCardView: React.FC<ApiModulesCardViewProps> = ({
                   willShowDiscountPercentage: hasDiscount ? planDiscount : undefined
                 });
                 
+                const isInactive = !module.is_active || module.operational_status !== 'on';
+                
                 return (
-                  <div key={module.id} className="relative">
+                  <div key={module.id} className={`relative ${isInactive ? 'opacity-50 grayscale' : ''}`}>
                     <ModuleCardTemplates
                       module={{
                         title: module.title,
