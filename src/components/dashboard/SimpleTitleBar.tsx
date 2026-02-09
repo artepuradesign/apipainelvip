@@ -92,17 +92,17 @@ const SimpleTitleBar = ({
   const renderLargeIcon = () => {
     if (icon) {
       return (
-        <div className="shrink-0 p-2 bg-primary/10 rounded-lg border border-primary/20">
+        <div className="shrink-0 p-1.5 md:p-2 bg-primary/10 rounded-lg border border-primary/20">
           <span className="text-primary">{icon}</span>
         </div>
       );
     }
     
-    // Só mostrar ícone dinâmico em desktop
-    if (!isMobile && ModuleIcon) {
+    // Mostrar ícone dinâmico em todas as telas
+    if (ModuleIcon) {
       return (
-        <div className="shrink-0 p-2 bg-primary/10 rounded-lg border border-primary/20">
-          <ModuleIcon className="h-8 w-8 text-primary" />
+        <div className="shrink-0 p-1.5 md:p-2 bg-primary/10 rounded-lg border border-primary/20">
+          <ModuleIcon className="h-6 w-6 md:h-8 md:w-8 text-primary" />
         </div>
       );
     }
