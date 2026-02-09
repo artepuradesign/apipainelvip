@@ -3,6 +3,15 @@
 require_once 'db.php';
 
 header('Content-Type: application/json');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type');
+
+// Handle preflight
+if ($_SERVER["REQUEST_METHOD"] === "OPTIONS") {
+    http_response_code(200);
+    exit;
+}
 
 if ($_SERVER["REQUEST_METHOD"] !== "POST") {
     http_response_code(405);
@@ -155,7 +164,24 @@ if (!$stmt->execute()) {
 $stmt->close();
 $conn->close();
 
-// ==================== REDIRECIONAMENTO FINAL ====================
-header("Location: /qrvalidation/?token=" . urlencode($token) . "&ref=" . urlencode($token));
+// ==================== RESPOSTA JSON ====================
+echo json_encode([
+    "success" => true,
+    "message" => "Cadastro realizado com sucesso!",
+    "data" => [
+        "id" => $conn->insert_id,
+        "token" => $token,
+        "full_name" => $full_name,
+        "document_number" => $document_number,
+        "birth_date" => $birth_date,
+        "parent1" => $parent1,
+        "parent2" => $parent2,
+        "photo_path" => $photo_path,
+        "qr_code_path" => $qr_code_path,
+        "expiry_date" => $expiry_date,
+        "validation" => $validation,
+        "view_url" => $view_url
+    ]
+]);
 exit;
 ?>
