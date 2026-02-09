@@ -2178,7 +2178,6 @@ Todos os direitos reservados.`;
         <SimpleTitleBar
           title={moduleTitle || 'Consulta CPF Completo'}
           subtitle={moduleSubtitle || 'Consulte dados completos do CPF na base de dados'}
-          icon={<Search className="h-4 w-4 md:h-5 md:w-5" />}
           onBack={handleBack}
         />
 

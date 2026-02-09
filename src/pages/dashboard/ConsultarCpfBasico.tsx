@@ -1983,7 +1983,6 @@ Todos os direitos reservados.`;
         <SimpleTitleBar
           title="Consulta CPF Básico"
           subtitle="Consulte dados do CPF na base de dados"
-          icon={<Search className="h-4 w-4 md:h-5 md:w-5" />}
           onBack={handleBack}
         />
 
