@@ -544,7 +544,6 @@ const ConsultarNomeCompleto = () => {
       <SimpleTitleBar
         title={currentModule?.title || 'Consulta por Nome Completo'}
         subtitle={currentModule?.description || 'Busque pessoas pelo nome completo'}
-        icon={<Search className="h-4 w-4 md:h-5 md:w-5" />}
         onBack={handleBack}
       />
 
