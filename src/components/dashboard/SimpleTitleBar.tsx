@@ -2,9 +2,11 @@ import React, { useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Package } from "lucide-react";
+import * as Icons from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { useApiModules } from "@/hooks/useApiModules";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 interface SimpleTitleBarProps {
   title: string;
@@ -23,6 +25,7 @@ const SimpleTitleBar = ({
 }: SimpleTitleBarProps) => {
   const location = useLocation();
   const { modules } = useApiModules();
+  const isMobile = useIsMobile();
 
   const normalizedPath = useMemo(() => {
     const path = (location?.pathname || "").trim();
@@ -30,7 +33,7 @@ const SimpleTitleBar = ({
     return path || "/";
   }, [location?.pathname]);
 
-  const moduleTitle = useMemo(() => {
+  const currentModule = useMemo(() => {
     const normalizeModuleRoute = (module: any): string => {
       const raw = (module?.api_endpoint || module?.path || "").toString().trim();
       if (!raw) return "";
@@ -45,29 +48,43 @@ const SimpleTitleBar = ({
       return route && route === normalizedPath;
     });
 
-    return match?.title?.toString().trim() || "";
+    return match || null;
   }, [modules, normalizedPath]);
 
-  const moduleDescription = useMemo(() => {
-    const normalizeModuleRoute = (module: any): string => {
-      const raw = (module?.api_endpoint || module?.path || "").toString().trim();
-      if (!raw) return "";
-      if (raw.startsWith("/")) return raw;
-      if (raw.startsWith("dashboard/")) return `/${raw}`;
-      if (!raw.includes("/")) return `/dashboard/${raw}`;
-      return raw;
-    };
+  const moduleTitle = currentModule?.title?.toString().trim() || "";
+  const moduleDescription = currentModule?.description?.toString().trim() || "";
 
-    const match = (modules || []).find((m: any) => {
-      const route = normalizeModuleRoute(m);
-      return route && route === normalizedPath;
-    });
+  // Obter o componente do ícone dinamicamente
+  const ModuleIcon = useMemo(() => {
+    if (icon) return null; // Se já foi passado um ícone, não precisamos buscar
 
-    return match?.description?.toString().trim() || "";
-  }, [modules, normalizedPath]);
+    const iconName = currentModule?.icon;
+    if (!iconName) return Package;
+
+    const IconComponent = Icons[iconName as keyof typeof Icons] as React.ComponentType<any>;
+    return IconComponent || Package;
+  }, [currentModule?.icon, icon]);
 
   const displayTitle = moduleTitle || title;
   const displaySubtitle = moduleDescription || subtitle;
+
+  // Renderizar o ícone - prioriza o passado via props, senão usa o do módulo
+  const renderIcon = () => {
+    if (icon) {
+      return <span className="shrink-0 text-primary">{icon}</span>;
+    }
+    
+    // Só mostrar ícone dinâmico em desktop
+    if (!isMobile && ModuleIcon) {
+      return (
+        <span className="shrink-0 p-1.5 bg-primary/10 rounded-lg">
+          <ModuleIcon className="h-5 w-5 text-primary" />
+        </span>
+      );
+    }
+
+    return null;
+  };
 
   return (
     <Card>
@@ -75,7 +92,7 @@ const SimpleTitleBar = ({
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <CardTitle className="flex items-center gap-2 text-base">
-              {icon ? <span className="shrink-0 text-primary">{icon}</span> : null}
+              {renderIcon()}
               <span className="truncate">{displayTitle}</span>
             </CardTitle>
             {displaySubtitle ? (
