@@ -85,15 +85,34 @@ const SimpleTitleBar = ({
     return IconComponent || Package;
   }, [currentModule?.icon, icon]);
 
+  // Obter a cor do módulo
+  const moduleColor = currentModule?.color || null;
+
   const displayTitle = moduleTitle || title;
   const displaySubtitle = moduleDescription || subtitle;
+
+  // Gerar estilos dinâmicos baseados na cor do módulo
+  const getIconStyles = () => {
+    if (moduleColor) {
+      return {
+        backgroundColor: `${moduleColor}15`, // 15% opacity
+        borderColor: `${moduleColor}30`, // 30% opacity
+      };
+    }
+    return {};
+  };
 
   // Renderizar o ícone grande à esquerda
   const renderLargeIcon = () => {
     if (icon) {
       return (
-        <div className="shrink-0 p-1.5 md:p-2 bg-primary/10 rounded-lg border border-primary/20">
-          <span className="text-primary">{icon}</span>
+        <div 
+          className="shrink-0 p-1.5 md:p-2 rounded-lg border"
+          style={moduleColor ? getIconStyles() : undefined}
+        >
+          <span style={moduleColor ? { color: moduleColor } : undefined} className={!moduleColor ? "text-primary" : ""}>
+            {icon}
+          </span>
         </div>
       );
     }
@@ -101,8 +120,14 @@ const SimpleTitleBar = ({
     // Mostrar ícone dinâmico em todas as telas
     if (ModuleIcon) {
       return (
-        <div className="shrink-0 p-1.5 md:p-2 bg-primary/10 rounded-lg border border-primary/20">
-          <ModuleIcon className="h-6 w-6 md:h-8 md:w-8 text-primary" />
+        <div 
+          className="shrink-0 p-1.5 md:p-2 rounded-lg border"
+          style={moduleColor ? getIconStyles() : undefined}
+        >
+          <ModuleIcon 
+            className="h-6 w-6 md:h-8 md:w-8" 
+            style={moduleColor ? { color: moduleColor } : undefined}
+          />
         </div>
       );
     }
