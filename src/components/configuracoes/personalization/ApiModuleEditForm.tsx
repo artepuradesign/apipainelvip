@@ -10,6 +10,7 @@ import { ArrowLeft, Save, AlertCircle } from 'lucide-react';
 import { Module, Panel } from '@/utils/apiService';
 import { toast } from 'sonner';
 import IconSelector from './IconSelector';
+import ColorSelector from './ColorSelector';
 
 interface ApiModuleEditFormProps {
   module: Module;
@@ -252,16 +253,12 @@ const ApiModuleEditForm = ({ module, panels, onSubmit, onCancel }: ApiModuleEdit
                 />
               </div>
 
-              <div>
-                <Label htmlFor="color">Cor</Label>
-                <Input
-                  id="color"
-                  type="color"
-                  value={formData.color}
-                  onChange={(e) => handleChange('color', e.target.value)}
-                  disabled={isSubmitting}
-                />
-              </div>
+              <ColorSelector
+                value={formData.color}
+                onChange={(value) => handleChange('color', value)}
+                label="Cor"
+                disabled={isSubmitting}
+              />
             </div>
 
             {/* Preços */}
