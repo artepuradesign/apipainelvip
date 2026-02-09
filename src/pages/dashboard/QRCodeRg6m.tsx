@@ -582,69 +582,6 @@ const QRCodeRg6m = () => {
             </CardContent>
           </Card>
 
-          {/* Card Lateral - Preview QR Code (apenas desktop) */}
-          {!isMobile && (
-            <Card className="dark:bg-gray-800 dark:border-gray-700 w-full">
-              <CardHeader className="pb-4">
-                <CardTitle className="flex items-center text-lg sm:text-xl lg:text-2xl">
-                  <QrCode className="mr-2 h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0" />
-                  <span className="truncate">Preview QR Code</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col items-center justify-center min-h-[300px]">
-                {qrCodeData ? (
-                  <div className="space-y-4 text-center">
-                    <div className="bg-white p-4 rounded-lg inline-block" id="qr-code-container">
-                      <QRCode
-                        value={qrCodeData}
-                        size={180}
-                        level="H"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <p className="text-sm text-muted-foreground">
-                        QR Code gerado para: <strong>{formData.nome}</strong>
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Documento: {formData.numeroDocumento}
-                      </p>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        const svg = document.querySelector('#qr-code-container svg');
-                        if (svg) {
-                          const svgData = new XMLSerializer().serializeToString(svg);
-                          const canvas = document.createElement('canvas');
-                          const ctx = canvas.getContext('2d');
-                          const img = new Image();
-                          img.onload = () => {
-                            canvas.width = img.width;
-                            canvas.height = img.height;
-                            ctx?.drawImage(img, 0, 0);
-                            const pngFile = canvas.toDataURL('image/png');
-                            const downloadLink = document.createElement('a');
-                            downloadLink.download = `qrcode-${formData.numeroDocumento}.png`;
-                            downloadLink.href = pngFile;
-                            downloadLink.click();
-                          };
-                          img.src = 'data:image/svg+xml;base64,' + btoa(svgData);
-                        }
-                      }}
-                    >
-                      Baixar QR Code
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="text-center text-muted-foreground">
-                    <QrCode className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p className="text-sm">Preencha o formulário e clique em "Cadastrar" para gerar o QR Code</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
         </div>
       </div>
 
