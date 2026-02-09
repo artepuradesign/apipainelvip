@@ -34,18 +34,22 @@ const SimpleTitleBar = ({
   }, [location?.pathname]);
 
   const currentModule = useMemo(() => {
-    const normalizeModuleRoute = (module: any): string => {
-      const raw = (module?.api_endpoint || module?.path || "").toString().trim();
+    const normalizeToPath = (raw: string): string => {
       if (!raw) return "";
-      if (raw.startsWith("/")) return raw;
-      if (raw.startsWith("dashboard/")) return `/${raw}`;
-      if (!raw.includes("/")) return `/dashboard/${raw}`;
-      return raw;
+      const trimmed = raw.trim();
+      if (trimmed.startsWith("/dashboard/")) return trimmed;
+      if (trimmed.startsWith("dashboard/")) return `/${trimmed}`;
+      if (trimmed.startsWith("/")) return `/dashboard${trimmed}`;
+      return `/dashboard/${trimmed}`;
     };
 
     const match = (modules || []).find((m: any) => {
-      const route = normalizeModuleRoute(m);
-      return route && route === normalizedPath;
+      // Tenta api_endpoint primeiro, depois path
+      const apiEndpoint = normalizeToPath(m?.api_endpoint || "");
+      const modulePath = normalizeToPath(m?.path || "");
+      
+      return (apiEndpoint && apiEndpoint === normalizedPath) || 
+             (modulePath && modulePath === normalizedPath);
     });
 
     return match || null;
