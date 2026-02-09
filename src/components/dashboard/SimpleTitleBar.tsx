@@ -43,14 +43,30 @@ const SimpleTitleBar = ({
       return `/dashboard/${trimmed}`;
     };
 
+    console.log('🔍 [SimpleTitleBar] Buscando módulo para:', normalizedPath);
+    console.log('🔍 [SimpleTitleBar] Total de módulos:', modules?.length);
+
     const match = (modules || []).find((m: any) => {
-      // Tenta api_endpoint primeiro, depois path
       const apiEndpoint = normalizeToPath(m?.api_endpoint || "");
       const modulePath = normalizeToPath(m?.path || "");
       
-      return (apiEndpoint && apiEndpoint === normalizedPath) || 
+      const isMatch = (apiEndpoint && apiEndpoint === normalizedPath) || 
              (modulePath && modulePath === normalizedPath);
+      
+      if (isMatch) {
+        console.log('✅ [SimpleTitleBar] Módulo encontrado:', m?.title, 'icon:', m?.icon);
+      }
+      
+      return isMatch;
     });
+
+    if (!match) {
+      console.log('❌ [SimpleTitleBar] Nenhum módulo encontrado para:', normalizedPath);
+      // Log dos primeiros 5 módulos para debug
+      (modules || []).slice(0, 5).forEach((m: any) => {
+        console.log('  📦 Módulo:', m?.title, '| api_endpoint:', m?.api_endpoint, '| path:', m?.path);
+      });
+    }
 
     return match || null;
   }, [modules, normalizedPath]);
