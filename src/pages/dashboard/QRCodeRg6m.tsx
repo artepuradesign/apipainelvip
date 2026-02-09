@@ -115,34 +115,46 @@ const QRCodeRg6m = () => {
   const totalBalance = planBalance + walletBalance;
   const hasSufficientBalance = (price: number) => totalBalance >= price;
 
-  // Carregar preço do módulo
-  const loadModulePrice = async () => {
+  // Carregar preço do módulo (Preço de Venda) com base na rota atual
+  const loadModulePrice = () => {
     setModulePriceLoading(true);
-    try {
-      // getModulePrice aceita path (string) e retorna número diretamente
-      // Usaremos o path do módulo atual ou um valor padrão
-      const modulePath = currentModule?.api_endpoint || currentModule?.path || '/dashboard/qrcode-rg-6m';
-      const price = getModulePrice(modulePath);
+
+    const rawPrice = currentModule?.price;
+    const price = Number(rawPrice ?? 0);
+
+    if (price && price > 0) {
       setModulePrice(price);
-    } catch (error) {
-      console.error('Erro ao carregar preço do módulo:', error);
-    } finally {
+      console.log('✅ [QRCODE] Preço do módulo carregado da configuração:', {
+        moduleId: currentModule?.id,
+        moduleTitle: currentModule?.title,
+        price
+      });
       setModulePriceLoading(false);
+      return;
     }
+
+    console.warn('⚠️ [QRCODE] Não foi possível obter o preço do módulo pela configuração; usando fallback');
+    const fallbackPrice = getModulePrice(location.pathname || '/dashboard/qrcode-rg-6m');
+    setModulePrice(fallbackPrice);
+    setModulePriceLoading(false);
   };
 
-  // Carregar saldos
-  const loadBalances = async () => {
-    try {
-      const response = await fetch('/api/wallet/balance');
-      if (response.ok) {
-        const data = await response.json();
-        setWalletBalance(data.wallet_balance || 0);
-        setPlanBalance(data.plan_balance || 0);
-      }
-    } catch (error) {
-      console.error('Erro ao carregar saldos:', error);
-    }
+  // Carregar saldos usando o hook useWalletBalance
+  const loadBalances = () => {
+    if (!user) return;
+    
+    // Usar saldo da API externa (prioridade: saldo_plano primeiro, depois saldo principal)
+    const apiPlanBalance = balance.saldo_plano || 0;
+    const apiWalletBalance = balance.saldo || 0;
+    
+    setPlanBalance(apiPlanBalance);
+    setWalletBalance(apiWalletBalance);
+    
+    console.log('[QRCODE] Saldos carregados da API:', { 
+      plan: apiPlanBalance, 
+      wallet: apiWalletBalance, 
+      total: apiPlanBalance + apiWalletBalance 
+    });
   };
 
   // Carregar últimos cadastros
@@ -220,6 +232,13 @@ const QRCodeRg6m = () => {
       setStatsLoading(false);
     }
   };
+
+  // Atualizar saldos locais quando o saldo da API externa mudar
+  useEffect(() => {
+    if (balance.saldo !== undefined || balance.saldo_plano !== undefined) {
+      loadBalances();
+    }
+  }, [balance]);
 
   useEffect(() => {
     if (user) {
