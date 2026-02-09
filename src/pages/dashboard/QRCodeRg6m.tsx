@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -6,7 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table';
-import { FileText, QrCode, Loader2, AlertCircle } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { FileText, QrCode, Loader2, AlertCircle, CheckCircle, User, Calendar, CreditCard, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWalletBalance } from '@/hooks/useWalletBalance';
@@ -18,7 +19,9 @@ import { consultationApiService } from '@/services/consultationApiService';
 import SimpleTitleBar from '@/components/dashboard/SimpleTitleBar';
 import LoadingScreen from '@/components/layout/LoadingScreen';
 import ScrollToTop from '@/components/ui/scroll-to-top';
-import QRCode from 'react-qr-code';
+
+// URL base do backend PHP
+const PHP_API_BASE = 'https://qr.atito.com.br/qrcode';
 
 interface FormData {
   nome: string;
@@ -26,18 +29,24 @@ interface FormData {
   numeroDocumento: string;
   pai: string;
   mae: string;
-  token: string;
   foto: File | null;
 }
 
 interface RegistroData {
-  id: string;
-  document: string;
-  status: string;
-  cost: number;
+  id: number;
+  token: string;
+  full_name: string;
+  birth_date: string;
+  document_number: string;
+  parent1: string;
+  parent2: string;
+  photo_path: string;
+  validation: 'pending' | 'verified';
+  expiry_date: string;
+  is_expired: boolean;
+  qr_code_path: string;
+  id_user: string | null;
   created_at: string;
-  result_data?: any;
-  metadata?: any;
 }
 
 const QRCodeRg6m = () => {
@@ -54,12 +63,14 @@ const QRCodeRg6m = () => {
     numeroDocumento: '',
     pai: '',
     mae: '',
-    token: '',
     foto: null
   });
   const [isLoading, setIsLoading] = useState(false);
-  const [qrCodeData, setQrCodeData] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  
+  // Modal de confirmação
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Balance & pricing state
   const [walletBalance, setWalletBalance] = useState(0);
@@ -68,14 +79,13 @@ const QRCodeRg6m = () => {
   const [modulePriceLoading, setModulePriceLoading] = useState(true);
   const [balanceCheckLoading, setBalanceCheckLoading] = useState(true);
 
-  // Recent registrations & stats
+  // Recent registrations & stats (do banco PHP)
   const [recentRegistrations, setRecentRegistrations] = useState<RegistroData[]>([]);
   const [recentLoading, setRecentLoading] = useState(false);
   const [stats, setStats] = useState({
     total: 0,
     completed: 0,
-    failed: 0,
-    processing: 0,
+    pending: 0,
     today: 0,
     this_month: 0,
     total_cost: 0
@@ -115,8 +125,8 @@ const QRCodeRg6m = () => {
   const totalBalance = planBalance + walletBalance;
   const hasSufficientBalance = (price: number) => totalBalance >= price;
 
-  // Carregar preço do módulo (Preço de Venda) com base na rota atual
-  const loadModulePrice = () => {
+  // Carregar preço do módulo
+  const loadModulePrice = useCallback(() => {
     setModulePriceLoading(true);
 
     const rawPrice = currentModule?.price;
@@ -124,137 +134,88 @@ const QRCodeRg6m = () => {
 
     if (price && price > 0) {
       setModulePrice(price);
-      console.log('✅ [QRCODE] Preço do módulo carregado da configuração:', {
-        moduleId: currentModule?.id,
-        moduleTitle: currentModule?.title,
-        price
-      });
       setModulePriceLoading(false);
       return;
     }
 
-    console.warn('⚠️ [QRCODE] Não foi possível obter o preço do módulo pela configuração; usando fallback');
     const fallbackPrice = getModulePrice(location.pathname || '/dashboard/qrcode-rg-6m');
     setModulePrice(fallbackPrice);
     setModulePriceLoading(false);
-  };
+  }, [currentModule, location.pathname]);
 
-  // Carregar saldos usando o hook useWalletBalance
-  const loadBalances = () => {
+  // Carregar saldos
+  const loadBalances = useCallback(() => {
     if (!user) return;
     
-    // Usar saldo da API externa (prioridade: saldo_plano primeiro, depois saldo principal)
     const apiPlanBalance = balance.saldo_plano || 0;
     const apiWalletBalance = balance.saldo || 0;
     
     setPlanBalance(apiPlanBalance);
     setWalletBalance(apiWalletBalance);
-    
-    console.log('[QRCODE] Saldos carregados da API:', { 
-      plan: apiPlanBalance, 
-      wallet: apiWalletBalance, 
-      total: apiPlanBalance + apiWalletBalance 
-    });
-  };
+  }, [user, balance]);
 
-  // Carregar últimos cadastros
-  const loadRecentRegistrations = async () => {
-    if (!user) return;
-    
+  // Carregar últimos cadastros do banco PHP
+  const loadRecentRegistrations = useCallback(async () => {
     try {
       setRecentLoading(true);
-      const response = await consultationApiService.getConsultationHistory(50, 0);
       
-      if (response.success && response.data && Array.isArray(response.data)) {
-        const registrations = response.data
-          .filter((item: any) => (item?.metadata?.page_route || '') === window.location.pathname)
-          .map((item: any) => ({
-            id: `reg-${item.id}`,
-            document: item.document,
-            status: item.status,
-            cost: item.cost,
-            created_at: item.created_at,
-            result_data: item.result_data,
-            metadata: item.metadata
-          }))
-          .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-          .slice(0, 5);
+      const response = await fetch(`${PHP_API_BASE}/list_users.php?limit=10&offset=0`);
+      const data = await response.json();
+      
+      if (data.success && Array.isArray(data.data)) {
+        setRecentRegistrations(data.data);
         
-        setRecentRegistrations(registrations);
+        // Calcular estatísticas
+        const todayStr = new Date().toDateString();
+        const now = new Date();
+        
+        const computed = data.data.reduce((acc: any, item: RegistroData) => {
+          acc.total += 1;
+          if (item.validation === 'verified') acc.completed += 1;
+          else acc.pending += 1;
+          
+          const d = new Date(item.created_at);
+          if (d.toDateString() === todayStr) acc.today += 1;
+          if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) acc.this_month += 1;
+          
+          return acc;
+        }, { total: 0, completed: 0, pending: 0, today: 0, this_month: 0, total_cost: 0 });
+        
+        // Total real vem da paginação
+        computed.total = data.pagination?.total || computed.total;
+        
+        setStats(computed);
       } else {
         setRecentRegistrations([]);
       }
     } catch (error) {
-      console.error('Erro ao carregar cadastros:', error);
+      console.error('Erro ao carregar cadastros do PHP:', error);
       setRecentRegistrations([]);
     } finally {
       setRecentLoading(false);
-    }
-  };
-
-  // Carregar estatísticas
-  const loadStats = async () => {
-    if (!user) {
-      setStatsLoading(false);
-      return;
-    }
-    
-    setStatsLoading(true);
-    
-    try {
-      const response = await consultationApiService.getConsultationHistory(1000, 0);
-      
-      if (response.success && Array.isArray(response.data) && response.data.length > 0) {
-        const registrations = response.data.filter((c: any) => (c?.metadata?.page_route || '') === window.location.pathname);
-        
-        const todayStr = new Date().toDateString();
-        const now = new Date();
-        
-        const computed = registrations.reduce((acc: any, item: any) => {
-          acc.total += 1;
-          const st = item.status || 'completed';
-          if (st === 'completed') acc.completed += 1;
-          else if (st === 'failed') acc.failed += 1;
-          else if (st === 'processing') acc.processing += 1;
-          acc.total_cost += Number(item.cost || 0);
-          const d = new Date(item.created_at);
-          if (d.toDateString() === todayStr) acc.today += 1;
-          if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) acc.this_month += 1;
-          return acc;
-        }, { total: 0, completed: 0, failed: 0, processing: 0, today: 0, this_month: 0, total_cost: 0 });
-        
-        setStats(computed);
-      }
-    } catch (error) {
-      console.error('Erro ao carregar estatísticas:', error);
-      setStats({ total: 0, completed: 0, failed: 0, processing: 0, today: 0, this_month: 0, total_cost: 0 });
-    } finally {
       setStatsLoading(false);
     }
-  };
+  }, []);
 
-  // Atualizar saldos locais quando o saldo da API externa mudar
+  // Atualizar saldos quando o saldo da API mudar
   useEffect(() => {
     if (balance.saldo !== undefined || balance.saldo_plano !== undefined) {
       loadBalances();
     }
-  }, [balance]);
+  }, [balance, loadBalances]);
 
   useEffect(() => {
     if (user) {
       loadBalances();
       reloadApiBalance();
-      Promise.all([
-        loadRecentRegistrations(),
-        loadStats()
-      ]);
+      loadRecentRegistrations();
     }
-  }, [user, reloadApiBalance]);
+  }, [user, reloadApiBalance, loadBalances, loadRecentRegistrations]);
 
   useEffect(() => {
     if (!user) return;
     loadModulePrice();
-  }, [user, currentModule?.id]);
+  }, [user, loadModulePrice]);
 
   useEffect(() => {
     const checkPageAccess = async () => {
@@ -280,6 +241,19 @@ const QRCodeRg6m = () => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Validar tamanho (max 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error('Foto muito grande (máximo 10MB)');
+        return;
+      }
+      
+      // Validar tipo
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
+      if (!allowedTypes.includes(file.type)) {
+        toast.error('Formato inválido. Use apenas JPG, PNG ou GIF');
+        return;
+      }
+      
       setFormData(prev => ({ ...prev, foto: file }));
       const reader = new FileReader();
       reader.onloadend = () => {
@@ -289,7 +263,8 @@ const QRCodeRg6m = () => {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Abrir modal de confirmação
+  const handleOpenConfirmModal = (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!formData.nome.trim()) {
@@ -308,41 +283,83 @@ const QRCodeRg6m = () => {
       toast.error('Nome da Mãe é obrigatório');
       return;
     }
+    if (!formData.foto) {
+      toast.error('Foto é obrigatória');
+      return;
+    }
 
     if (!hasSufficientBalance(finalPrice)) {
       toast.error('Saldo insuficiente para realizar o cadastro');
       return;
     }
 
-    setIsLoading(true);
+    setShowConfirmModal(true);
+  };
+
+  // Confirmar e enviar cadastro
+  const handleConfirmSubmit = async () => {
+    setIsSubmitting(true);
 
     try {
-      const qrData = {
-        nome: formData.nome,
-        nascimento: formData.dataNascimento,
-        documento: formData.numeroDocumento,
-        pai: formData.pai,
-        mae: formData.mae,
-        token: formData.token || 'N/A',
-        geradoEm: new Date().toISOString(),
-        userId: user?.id
-      };
+      // 1. Enviar para o backend PHP
+      const formDataToSend = new FormData();
+      formDataToSend.append('full_name', formData.nome.toUpperCase().trim());
+      formDataToSend.append('birth_date', formData.dataNascimento);
+      formDataToSend.append('document_number', formData.numeroDocumento.trim());
+      formDataToSend.append('parent1', formData.pai.toUpperCase().trim());
+      formDataToSend.append('parent2', formData.mae.toUpperCase().trim());
+      
+      if (formData.foto) {
+        formDataToSend.append('photo', formData.foto);
+      }
 
-      const qrString = JSON.stringify(qrData);
-      setQrCodeData(qrString);
+      const response = await fetch(`${PHP_API_BASE}/register.php`, {
+        method: 'POST',
+        body: formDataToSend
+      });
 
-      // Recarregar dados após cadastro
-      await Promise.all([
-        loadRecentRegistrations(),
-        loadStats()
-      ]);
+      const result = await response.json();
 
-      toast.success('QR Code cadastrado com sucesso!');
-    } catch (error) {
-      console.error('Erro ao cadastrar QR Code:', error);
-      toast.error('Erro ao cadastrar QR Code. Tente novamente.');
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Erro ao cadastrar');
+      }
+
+      // 2. Cobrar do saldo (registrar no histórico)
+      try {
+        await consultationApiService.recordConsultation({
+          document: formData.numeroDocumento,
+          status: 'completed',
+          cost: finalPrice,
+          result_data: result.data,
+          metadata: {
+            page_route: location.pathname,
+            module_name: 'QR Code RG 6M',
+            token: result.data.token
+          }
+        });
+
+        // Atualizar saldo
+        await reloadApiBalance();
+      } catch (balanceError) {
+        console.error('Erro ao registrar cobrança:', balanceError);
+      }
+
+      // 3. Limpar formulário e fechar modal
+      setShowConfirmModal(false);
+      handleReset();
+      
+      // 4. Recarregar lista
+      await loadRecentRegistrations();
+
+      toast.success('Cadastro realizado com sucesso!', {
+        description: `QR Code gerado para ${formData.nome}`
+      });
+
+    } catch (error: any) {
+      console.error('Erro ao cadastrar:', error);
+      toast.error(error.message || 'Erro ao cadastrar. Tente novamente.');
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -353,10 +370,8 @@ const QRCodeRg6m = () => {
       numeroDocumento: '',
       pai: '',
       mae: '',
-      token: '',
       foto: null
     });
-    setQrCodeData(null);
     setPreviewUrl(null);
   };
 
@@ -394,6 +409,11 @@ const QRCodeRg6m = () => {
       minute: '2-digit',
       second: '2-digit',
     });
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('pt-BR');
   };
 
   return (
@@ -449,7 +469,7 @@ const QRCodeRg6m = () => {
             </CardHeader>
 
             <CardContent className="space-y-4">
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleOpenConfirmModal} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="nome">Nome Completo *</Label>
                   <Input
@@ -474,11 +494,11 @@ const QRCodeRg6m = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="numeroDocumento">Número de Documento *</Label>
+                  <Label htmlFor="numeroDocumento">Número de Documento (CPF) *</Label>
                   <Input
                     id="numeroDocumento"
                     type="text"
-                    placeholder="Digite o número do documento"
+                    placeholder="Digite o CPF"
                     value={formData.numeroDocumento}
                     onChange={(e) => handleInputChange('numeroDocumento', e.target.value)}
                     required
@@ -486,7 +506,7 @@ const QRCodeRg6m = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="pai">Pai</Label>
+                  <Label htmlFor="pai">Nome do Pai</Label>
                   <Input
                     id="pai"
                     type="text"
@@ -497,7 +517,7 @@ const QRCodeRg6m = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="mae">Mãe *</Label>
+                  <Label htmlFor="mae">Nome da Mãe *</Label>
                   <Input
                     id="mae"
                     type="text"
@@ -509,24 +529,14 @@ const QRCodeRg6m = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="token">Token (opcional)</Label>
-                  <Input
-                    id="token"
-                    type="text"
-                    placeholder="Token de identificação"
-                    value={formData.token}
-                    onChange={(e) => handleInputChange('token', e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="foto">Foto</Label>
+                  <Label htmlFor="foto">Foto 3x4 *</Label>
                   <Input
                     id="foto"
                     type="file"
-                    accept="image/*"
+                    accept="image/jpeg,image/jpg,image/png,image/gif"
                     onChange={handleFileChange}
                     className="cursor-pointer"
+                    required
                   />
                   {previewUrl && (
                     <div className="mt-2">
@@ -542,13 +552,13 @@ const QRCodeRg6m = () => {
                 <div className="flex flex-col gap-3">
                   <Button
                     type="submit"
-                    disabled={isLoading || !formData.nome || !formData.dataNascimento || !formData.numeroDocumento || !formData.mae || !hasSufficientBalance(finalPrice) || modulePriceLoading}
+                    disabled={isLoading || !formData.nome || !formData.dataNascimento || !formData.numeroDocumento || !formData.mae || !formData.foto || !hasSufficientBalance(finalPrice) || modulePriceLoading}
                     className="w-full bg-brand-purple hover:bg-brand-darkPurple"
                   >
                     {isLoading ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Cadastrando...
+                        Processando...
                       </>
                     ) : (
                       <>
@@ -585,6 +595,107 @@ const QRCodeRg6m = () => {
         </div>
       </div>
 
+      {/* Modal de Confirmação */}
+      <Dialog open={showConfirmModal} onOpenChange={setShowConfirmModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle className="h-5 w-5 text-green-500" />
+              Confirmar Cadastro
+            </DialogTitle>
+            <DialogDescription>
+              Verifique os dados antes de confirmar. Será cobrado <strong>R$ {finalPrice.toFixed(2)}</strong> do seu saldo.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            {/* Preview da foto */}
+            {previewUrl && (
+              <div className="flex justify-center">
+                <img
+                  src={previewUrl}
+                  alt="Foto"
+                  className="w-24 h-32 object-cover rounded-lg border-2 border-purple-200 shadow-md"
+                />
+              </div>
+            )}
+            
+            {/* Dados do cadastro */}
+            <div className="space-y-3 bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <User className="h-4 w-4 text-muted-foreground mt-0.5" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Nome Completo</p>
+                  <p className="font-medium text-sm">{formData.nome.toUpperCase()}</p>
+                </div>
+              </div>
+              
+              <div className="flex items-start gap-3">
+                <Calendar className="h-4 w-4 text-muted-foreground mt-0.5" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Data de Nascimento</p>
+                  <p className="font-medium text-sm">{formatDate(formData.dataNascimento)}</p>
+                </div>
+              </div>
+              
+              <div className="flex items-start gap-3">
+                <CreditCard className="h-4 w-4 text-muted-foreground mt-0.5" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Documento (CPF)</p>
+                  <p className="font-medium text-sm font-mono">{formData.numeroDocumento}</p>
+                </div>
+              </div>
+              
+              <div className="flex items-start gap-3">
+                <Users className="h-4 w-4 text-muted-foreground mt-0.5" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Filiação</p>
+                  <p className="font-medium text-sm">
+                    {formData.pai ? formData.pai.toUpperCase() : '—'}
+                  </p>
+                  <p className="font-medium text-sm">{formData.mae.toUpperCase()}</p>
+                </div>
+              </div>
+            </div>
+            
+            {/* Valor a ser cobrado */}
+            <div className="flex items-center justify-between p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+              <span className="text-sm font-medium">Valor do cadastro:</span>
+              <span className="text-lg font-bold text-purple-600 dark:text-purple-400">
+                R$ {finalPrice.toFixed(2)}
+              </span>
+            </div>
+          </div>
+          
+          <DialogFooter className="gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => setShowConfirmModal(false)}
+              disabled={isSubmitting}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleConfirmSubmit}
+              disabled={isSubmitting}
+              className="bg-brand-purple hover:bg-brand-darkPurple"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Cadastrando...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="mr-2 h-4 w-4" />
+                  Confirmar Cadastro
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Últimos Cadastros */}
       <Card className="w-full">
         <CardHeader className="pb-4">
@@ -593,6 +704,14 @@ const QRCodeRg6m = () => {
               <FileText className={`mr-2 flex-shrink-0 ${isMobile ? 'h-4 w-4' : 'h-4 w-4 sm:h-5 sm:w-5'}`} />
               <span className="truncate">Últimos Cadastros</span>
             </CardTitle>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={loadRecentRegistrations}
+              disabled={recentLoading}
+            >
+              {recentLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Atualizar'}
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
@@ -611,23 +730,32 @@ const QRCodeRg6m = () => {
                       className="w-full text-left rounded-md border border-border bg-card px-3 py-2"
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="font-mono text-xs truncate">
-                            {registration.document || 'N/A'}
+                        <div className="min-w-0 flex-1">
+                          <div className="font-medium text-sm truncate">
+                            {registration.full_name}
+                          </div>
+                          <div className="font-mono text-xs text-muted-foreground truncate">
+                            {registration.document_number}
                           </div>
                           <div className="text-xs text-muted-foreground mt-0.5">
                             {formatFullDate(registration.created_at)}
                           </div>
                         </div>
-                        <span
-                          className={
-                            registration.status === 'completed'
-                              ? 'mt-0.5 inline-flex h-2.5 w-2.5 flex-shrink-0 rounded-full bg-success'
-                              : 'mt-0.5 inline-flex h-2.5 w-2.5 flex-shrink-0 rounded-full bg-muted'
-                          }
-                          aria-label={registration.status === 'completed' ? 'Concluído' : 'Pendente'}
-                          title={registration.status === 'completed' ? 'Concluído' : 'Pendente'}
-                        />
+                        <div className="flex flex-col items-end gap-1">
+                          <Badge
+                            variant={registration.validation === 'verified' ? 'secondary' : 'outline'}
+                            className={
+                              registration.validation === 'verified'
+                                ? 'text-[10px] bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                : 'text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+                            }
+                          >
+                            {registration.validation === 'verified' ? 'Verificado' : 'Pendente'}
+                          </Badge>
+                          {registration.is_expired && (
+                            <span className="text-[10px] text-red-500 font-medium">Expirado</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -636,42 +764,62 @@ const QRCodeRg6m = () => {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-40 whitespace-nowrap">Documento</TableHead>
-                      <TableHead className="min-w-[180px] whitespace-nowrap">Data e Hora</TableHead>
-                      <TableHead className="w-28 text-right whitespace-nowrap">Valor</TableHead>
-                      <TableHead className="w-28 text-center whitespace-nowrap">Status</TableHead>
+                      <TableHead className="w-12">Foto</TableHead>
+                      <TableHead className="min-w-[200px]">Nome</TableHead>
+                      <TableHead className="w-40">Documento</TableHead>
+                      <TableHead className="min-w-[150px]">Data</TableHead>
+                      <TableHead className="w-28">Validade</TableHead>
+                      <TableHead className="w-28 text-center">Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {recentRegistrations.map((registration) => {
-                      const numericValue = Number(registration.cost) || 0;
-
-                      return (
-                        <TableRow key={registration.id}>
-                          <TableCell className="font-mono text-xs sm:text-sm whitespace-nowrap">
-                            {registration.document || 'N/A'}
-                          </TableCell>
-                          <TableCell className="text-xs sm:text-sm whitespace-nowrap">
-                            {formatFullDate(registration.created_at)}
-                          </TableCell>
-                          <TableCell className="text-right text-xs sm:text-sm font-medium text-destructive whitespace-nowrap">
-                            R$ {numericValue.toFixed(2).replace('.', ',')}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <Badge
-                              variant={registration.status === 'completed' ? 'secondary' : 'outline'}
-                              className={
-                                registration.status === 'completed'
-                                  ? 'text-xs rounded-full bg-foreground text-background hover:bg-foreground/90'
-                                  : 'text-xs rounded-full'
-                              }
-                            >
-                              {registration.status === 'completed' ? 'Concluído' : 'Pendente'}
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
+                    {recentRegistrations.map((registration) => (
+                      <TableRow key={registration.id}>
+                        <TableCell>
+                          {registration.photo_path ? (
+                            <img
+                              src={`${PHP_API_BASE}/${registration.photo_path}`}
+                              alt="Foto"
+                              className="w-10 h-10 object-cover rounded"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <div className="w-10 h-10 bg-gray-200 dark:bg-gray-700 rounded flex items-center justify-center">
+                              <User className="h-5 w-5 text-gray-400" />
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="font-medium text-sm">
+                          {registration.full_name}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {registration.document_number}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {formatFullDate(registration.created_at)}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <span className={registration.is_expired ? 'text-red-500 font-medium' : ''}>
+                            {formatDate(registration.expiry_date)}
+                            {registration.is_expired && ' (Exp.)'}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge
+                            variant={registration.validation === 'verified' ? 'secondary' : 'outline'}
+                            className={
+                              registration.validation === 'verified'
+                                ? 'text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                : 'text-xs bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+                            }
+                          >
+                            {registration.validation === 'verified' ? 'Verificado' : 'Pendente'}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
                   </TableBody>
                 </Table>
               )}
@@ -717,10 +865,10 @@ const QRCodeRg6m = () => {
         <Card className="w-full">
           <CardContent className="p-3 sm:p-4">
             <div className="text-center">
-              <h3 className="text-base sm:text-lg lg:text-xl font-bold text-success truncate">
+              <h3 className="text-base sm:text-lg lg:text-xl font-bold text-green-500 truncate">
                 {statsLoading ? '...' : stats.completed}
               </h3>
-              <p className="text-xs sm:text-sm text-muted-foreground mt-1 break-words">Concluídos</p>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1 break-words">Verificados</p>
             </div>
           </CardContent>
         </Card>
@@ -728,10 +876,10 @@ const QRCodeRg6m = () => {
         <Card className="w-full">
           <CardContent className="p-3 sm:p-4">
             <div className="text-center">
-              <h3 className="text-base sm:text-lg lg:text-xl font-bold text-primary truncate">
-                R$ {statsLoading ? '0,00' : stats.total_cost.toFixed(2)}
+              <h3 className="text-base sm:text-lg lg:text-xl font-bold text-orange-500 truncate">
+                {statsLoading ? '...' : stats.pending}
               </h3>
-              <p className="text-xs sm:text-sm text-muted-foreground mt-1 break-words">Total Gasto</p>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1 break-words">Pendentes</p>
             </div>
           </CardContent>
         </Card>

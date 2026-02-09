@@ -177,5 +177,29 @@ export const consultationApiService = {
       method: 'GET',
       headers: getHeaders()
     });
+  },
+
+  // Registrar uma consulta/cadastro manual (para módulos externos como QR Code)
+  async recordConsultation(data: {
+    document: string;
+    status: 'processing' | 'completed' | 'failed' | 'cancelled';
+    cost: number;
+    result_data?: any;
+    metadata?: any;
+  }): Promise<ApiResponse<ConsultationResponse>> {
+    console.log('📝 [CONSULTATION_API] Registrando consulta manual:', data);
+    
+    return apiRequest<ApiResponse<ConsultationResponse>>('/consultas/record', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({
+        module_type: 'qrcode',
+        document: data.document,
+        status: data.status,
+        cost: data.cost,
+        result_data: data.result_data,
+        metadata: data.metadata
+      })
+    });
   }
 };
